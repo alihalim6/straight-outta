@@ -13,7 +13,7 @@ rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}"
 
 python3 -m pip install -r "${SCRIPT_DIR}/requirements.txt" -t "${BUILD_DIR}" --quiet
-cp "${SCRIPT_DIR}"/*.py "${BUILD_DIR}/"
+cp "${SCRIPT_DIR}"/config.py "${SCRIPT_DIR}"/db.py "${SCRIPT_DIR}"/handler.py "${SCRIPT_DIR}"/spotify.py "${BUILD_DIR}/"
 
 cd "${BUILD_DIR}"
 zip -r "${ZIP_PATH}" . -q
