@@ -26,6 +26,8 @@ function App() {
         </p>
       </div>
       <p className="read-the-docs">
+        <a href="/play">Play (temp)</a>
+        {" · "}
         <a href="/refresh">Refresh playlists (temp)</a>
       </p>
     </>
