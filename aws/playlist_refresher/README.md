@@ -49,7 +49,7 @@ Output: `aws/playlist_refresher/dist/playlist_refresher.zip`. Upload this as the
   | `DATABASE_URL` | Postgres connection string (e.g. Heroku Postgres URL) |
   | `SPOTIFY_CLIENT_ID` | Spotify app client ID |
   | `SPOTIFY_CLIENT_SECRET` | Spotify app client secret |
-  | `PLAYLIST_NAME_PREFIX` | e.g. `WAUX 91.7FM: ` |
+  | `PLAYLIST_NAME_SUFFFIX` | e.g. `WAUX 91.7FM: ` |
   | `ARTISTS_PER_QUERY` | Default `25` |
   | `TRACKS_PER_PLAYLIST` | Default `50` |
   | `SPOTIFY_MARKET` | e.g. `US` |

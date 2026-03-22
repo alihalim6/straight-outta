@@ -74,7 +74,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     logger.warning("No tracks for %s, skipping", location_name)
                     continue
 
-                playlist_name = f"{config.PLAYLIST_NAME_PREFIX} {_playlist_display_name(location_name)}"
+                playlist_name = f"{_playlist_display_name(location_name)} {config.PLAYLIST_NAME_SUFFFIX}"
                 existing_playlist_id = db.get_playlist_for_location(
                     conn, location_id
                 )
