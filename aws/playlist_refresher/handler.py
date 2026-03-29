@@ -13,11 +13,37 @@ import spotify
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Map DB location name -> playlist-title friendly name (fill in rest as needed)
+# Map DB location name -> playlist-title friendly name
 LOCATION_DISPLAY_NAMES = {
+    # West
     "LA": "LA",
-    "BAY AREA": "Bay Area",
+    "BAY": "Bay Area",
+    "SAC": "NorCal",
+    "SEA/POR": "Pacific Northwest",
+    "DEN": "The Rockies",
+    # Midwest
+    "CHI": "Chicago",
+    "CLE": "Ohio",
+    "DET": "Michigan",
+    "STL": "Lower Midwest",
+    "MIL": "Milwaukee",
+    # South
+    "FL": "Florida",
     "ATL": "Atlanta",
+    "HOU": "Houston",
+    "DFW": "Dallas",
+    "MISS": "Mississippi",
+    "NO": "New Orleans",
+    "TENN": "Tennessee",
+    # East
+    "NY": "NY",
+    "BUF": "Buffalo",
+    "PHI": "Philly",
+    "PITT": "Pittsburgh",
+    "NE": "Northeast",
+    "DMV": "DMV",
+    "VA": "Virginia",
+    "NC/SC": "Carolinas",
 }
 
 
