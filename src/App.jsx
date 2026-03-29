@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import "./App.css";
 
 const DIAMOND_REGIONS = [
@@ -20,6 +20,7 @@ const DEFAULT_LOCATION_NAME_BY_REGION = {
 };
 
 const REGION_PICKER_ORDER = ["West", "Midwest", "South", "East"];
+const TUNER_ALIGNMENT_THRESHOLD = 0.06;
 
 function regionIdByName(regions, targetName) {
   const t = targetName.toLowerCase();
@@ -45,6 +46,29 @@ function defaultLocationId(locations, regionName) {
   return String(withPlaylist[0].id);
 }
 
+function clamp01(value) {
+  return Math.min(1, Math.max(0, value));
+}
+
+function stationPositions(count) {
+  if (count <= 1) return [0.5];
+  return Array.from({ length: count }, (_, i) => i / (count - 1));
+}
+
+function nearestStationIndex(position, points) {
+  return points.reduce((best, point, index) => {
+    const distance = Math.abs(point - position);
+    if (distance < best.distance) return { index, distance };
+    return best;
+  }, { index: 0, distance: Number.POSITIVE_INFINITY });
+}
+
+function stationLabel(name) {
+  return String(name || "")
+    .toUpperCase()
+    .replace(/\s+/g, "");
+}
+
 function App() {
   const [regions, setRegions] = useState([]);
   const [locations, setLocations] = useState([]);
@@ -56,9 +80,13 @@ function App() {
   const [embedMode, setEmbedMode] = useState("iframe");
   const [tunerMounted, setTunerMounted] = useState(true);
   const [tunerFadeOut, setTunerFadeOut] = useState(false);
+  const [tunerPosition, setTunerPosition] = useState(0.5);
+  const [isSliding, setIsSliding] = useState(false);
   const apiRef = useRef(null);
   const controllerRef = useRef(null);
   const controllerHostRef = useRef(null);
+  const sliderBedRef = useRef(null);
+  const tunerDragRef = useRef(null);
 
   useEffect(() => {
     if (window.__SpotifyIframeAPI) {
@@ -172,6 +200,87 @@ function App() {
     };
   }, [playlistId]);
 
+  const playableLocations = useMemo(
+    () => locations.filter((l) => l.playlist_id),
+    [locations]
+  );
+  const tuningPoints = useMemo(
+    () => stationPositions(playableLocations.length),
+    [playableLocations.length]
+  );
+  const nearest = nearestStationIndex(tunerPosition, tuningPoints);
+  const nearestLocation = playableLocations[nearest.index] ?? null;
+  const alignmentThreshold = playableLocations.length <= 1 ? 1 : TUNER_ALIGNMENT_THRESHOLD;
+  const isAligned = nearest.distance <= alignmentThreshold;
+
+  useEffect(() => {
+    if (!selectedLocation || !playableLocations.length) {
+      setTunerPosition(0.5);
+      return;
+    }
+    const locationIndex = playableLocations.findIndex((l) => String(l.id) === selectedLocation);
+    if (locationIndex >= 0) {
+      setTunerPosition(tuningPoints[locationIndex] ?? 0.5);
+    }
+  }, [selectedLocation, playableLocations, tuningPoints]);
+
+  useEffect(() => {
+    if (!isAligned || !nearestLocation || !isSliding) return;
+    const candidateId = String(nearestLocation.id);
+    if (candidateId !== selectedLocation) {
+      setSelectedLocation(candidateId);
+    }
+  }, [isAligned, nearestLocation, selectedLocation, isSliding]);
+
+  function snapToNearestStation() {
+    if (!nearestLocation) return;
+    setTunerPosition(tuningPoints[nearest.index] ?? tunerPosition);
+    setSelectedLocation(String(nearestLocation.id));
+  }
+
+  function positionFromClientX(clientX) {
+    const el = sliderBedRef.current;
+    if (!el) return tunerPosition;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return tunerPosition;
+    return clamp01((clientX - rect.left) / rect.width);
+  }
+
+  function handleTunerPointerDown(e) {
+    if (e.button === 2) return;
+    const el = sliderBedRef.current;
+    if (!el) return;
+    el.setPointerCapture(e.pointerId);
+    const p = positionFromClientX(e.clientX);
+    setTunerPosition(p);
+    setIsSliding(true);
+    tunerDragRef.current = { pointerId: e.pointerId, startX: e.clientX, startP: p };
+  }
+
+  function handleTunerPointerMove(e) {
+    const drag = tunerDragRef.current;
+    if (!drag || drag.pointerId !== e.pointerId) return;
+    const el = sliderBedRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    setTunerPosition(clamp01(drag.startP + (e.clientX - drag.startX) / rect.width));
+  }
+
+  function endTunerPointer(e) {
+    const drag = tunerDragRef.current;
+    if (drag && drag.pointerId === e.pointerId) {
+      tunerDragRef.current = null;
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
+    setIsSliding(false);
+    snapToNearestStation();
+  }
+
   useEffect(() => {
     if (!selectedRegion) {
       setTunerMounted(true);
@@ -190,6 +299,10 @@ function App() {
   const regionPickerRegions = sortRegionsForPicker(regions);
   const showEmbed = Boolean(playlistId);
   const showRegionSwitcher = Boolean(selectedRegion);
+  const showLocationTuner = Boolean(selectedRegion && playableLocations.length);
+  const stationRowSplit = Math.ceil(playableLocations.length / 2);
+  const topStationLocations = playableLocations.slice(0, stationRowSplit);
+  const bottomStationLocations = playableLocations.slice(stationRowSplit);
 
   if (loading) {
     return (
@@ -289,6 +402,110 @@ function App() {
                 />
               )}
             </div>
+          )}
+
+          {showLocationTuner && (
+            <section className="location-tuner" aria-label="Location tuner">
+              <div
+                className="station-window"
+                role="presentation"
+                style={{ "--tuner-position": tunerPosition }}
+              >
+                <div className="station-window-bar station-window-bar--top">
+                  <div className="station-window-track">
+                    {topStationLocations.map((location) => {
+                      const index = playableLocations.findIndex(
+                        (l) => l.id === location.id
+                      );
+                      return (
+                        <div
+                          key={location.id}
+                          className={`station-bar-label${String(location.id) === selectedLocation ? " station-bar-label--active" : ""}`}
+                          style={{ left: `${(tuningPoints[index] ?? 0) * 100}%` }}
+                        >
+                          {stationLabel(location.name)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="station-window-gap">
+                  <div className="station-marker" aria-hidden="true" />
+                </div>
+                <div className="station-window-bar station-window-bar--bottom">
+                  <div className="station-window-track">
+                    {bottomStationLocations.map((location) => {
+                      const index = playableLocations.findIndex(
+                        (l) => l.id === location.id
+                      );
+                      return (
+                        <div
+                          key={location.id}
+                          className={`station-bar-label${String(location.id) === selectedLocation ? " station-bar-label--active" : ""}`}
+                          style={{
+                            left: `${(tuningPoints[index] ?? 0) * 100}%`,
+                          }}
+                        >
+                          {stationLabel(location.name)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                ref={sliderBedRef}
+                className="slider-bed"
+                role="slider"
+                tabIndex={0}
+                aria-valuemin={0}
+                aria-valuemax={1000}
+                aria-valuenow={Math.round(tunerPosition * 1000)}
+                aria-label="Tune location"
+                aria-valuetext={
+                  nearestLocation?.name
+                    ? `${nearestLocation.name}${isAligned ? "" : " (between stations)"}`
+                    : undefined
+                }
+                onPointerDown={handleTunerPointerDown}
+                onPointerMove={handleTunerPointerMove}
+                onPointerUp={endTunerPointer}
+                onPointerCancel={endTunerPointer}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                    e.preventDefault();
+                    const delta = e.key === "ArrowLeft" ? -0.02 : 0.02;
+                    setIsSliding(true);
+                    setTunerPosition((p) => clamp01(p + delta));
+                  } else if (e.key === "Home") {
+                    e.preventDefault();
+                    setIsSliding(true);
+                    setTunerPosition(0);
+                  } else if (e.key === "End") {
+                    e.preventDefault();
+                    setIsSliding(true);
+                    setTunerPosition(1);
+                  } else if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    snapToNearestStation();
+                  }
+                }}
+                onKeyUp={(e) => {
+                  if (
+                    e.key === "ArrowLeft" ||
+                    e.key === "ArrowRight" ||
+                    e.key === "Home" ||
+                    e.key === "End"
+                  ) {
+                    setIsSliding(false);
+                    snapToNearestStation();
+                  }
+                }}
+              >
+                <div className="slider-ridges" aria-hidden="true" />
+              </div>
+            </section>
           )}
         </div>
 

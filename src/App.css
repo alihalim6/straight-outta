@@ -236,6 +236,127 @@
     0 3px 8px rgba(0, 0, 0, 0.4);
 }
 
+.location-tuner {
+  width: min(620px, 100%);
+  margin: 0.75rem 0 1rem;
+  padding: 0.5rem 0.2rem 0.2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.station-window {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  margin: 0 auto 0.55rem;
+  border-radius: 6px;
+  border: 1px solid #1a1a1a;
+  background: #fff;
+  /* Labels sit on a translated track and extend past the edges — hidden hides text like "BAYAREA". */
+  overflow: visible;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.station-window-bar {
+  position: relative;
+  min-height: 22px;
+  background: #000;
+  box-sizing: border-box;
+}
+
+.station-window-bar--top {
+  padding: 4px 0 3px;
+}
+
+.station-window-bar--bottom {
+  padding: 3px 0 4px;
+}
+
+.station-window-gap {
+  position: relative;
+  height: 18px;
+  background: #fff;
+}
+
+.station-window-track {
+  position: relative;
+  height: 100%;
+  min-height: 1.1rem;
+  transform: translateX(calc(50% - (var(--tuner-position, 0.5) * 100%)));
+}
+
+.station-bar-label {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: #fff;
+  white-space: nowrap;
+  transition: color 0.12s ease, opacity 0.12s ease;
+}
+
+.station-bar-label--active {
+  color: #fff;
+  opacity: 1;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.35);
+}
+
+.station-marker {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 8px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--active-region-accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.slider-bed {
+  position: relative;
+  width: 300px;
+  max-width: 100%;
+  height: 20px;
+  box-sizing: border-box;
+  border-radius: 1000px;
+  border: 1px solid #2a2a2a;
+  background: #000000db;
+  touch-action: none;
+  cursor: ew-resize;
+  user-select: none;
+}
+
+.slider-bed:focus-visible {
+  outline: 2px solid #2a6a9a;
+  outline-offset: 3px;
+}
+
+.slider-ridges {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  height: 12px;
+  transform: translateY(-50%);
+  border-radius: 1000px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.22) 0,
+      rgba(255, 255, 255, 0.22) 1px,
+      rgba(0, 0, 0, 0.35) 1px,
+      rgba(0, 0, 0, 0.35) 4px
+    );
+  opacity: 0.65;
+  pointer-events: none;
+  z-index: 1;
+}
+
 .embed-wrap {
   width: 100%;
   margin-top: 0.5rem;
