@@ -1,6 +1,12 @@
 :root {
   --station-letter-scale: 2.1;
   --active-region-accent: rgb(255, 85, 0);
+  --tuner-window-radius: 18px;
+  --tuner-depth-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.65),
+    0 4px 10px rgba(0, 0, 0, 0.1),
+    0 10px 20px rgba(0, 0, 0, 0.08),
+    0 16px 32px rgba(0, 0, 0, 0.05);
 }
 
 .radio-app {
@@ -27,6 +33,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  align-items: center;
 }
 
 .radio-body {
@@ -117,12 +124,16 @@
 .radio-tuner {
   margin: 6rem 0;
   opacity: 1;
-  transition: opacity 0.45s ease;
+  transition:
+    opacity 0.45s ease,
+    margin 0.45s ease;
 }
 
 .radio-tuner--faded {
   opacity: 0;
   pointer-events: none;
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .region-diamond {
@@ -177,11 +188,15 @@
   border-radius: 50%;
   padding: 4px;
   box-sizing: border-box;
-  background: radial-gradient(circle at 50% 40%, rgba(0, 0, 0, 0.06) 0%, rgba(0, 0, 0, 0.14) 100%);
+  background:
+    radial-gradient(circle at 50% 32%, rgba(255, 255, 255, 0.16) 0%, transparent 42%),
+    radial-gradient(circle at 50% 40%, rgba(0, 0, 0, 0.06) 0%, rgba(0, 0, 0, 0.16) 100%);
   box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.22),
-    inset 0 -1px 2px rgba(255, 255, 255, 0.35),
-    0 1px 0 rgba(255, 255, 255, 0.4);
+    inset 0 3px 8px rgba(0, 0, 0, 0.32),
+    inset 0 -2px 5px rgba(255, 255, 255, 0.28),
+    0 5px 12px rgba(0, 0, 0, 0.22),
+    0 2px 4px rgba(0, 0, 0, 0.16),
+    0 1px 0 rgba(255, 255, 255, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -195,17 +210,20 @@
   padding: 0;
   cursor: pointer;
   background: radial-gradient(
-    circle at 32% 28%,
-    #4a4a4a 0%,
-    #1f1f1f 42%,
-    #0c0c0c 72%,
-    #050505 100%
+    circle at 30% 26%,
+    #5c5c5c 0%,
+    #2a2a2a 28%,
+    #151515 55%,
+    #060606 78%,
+    #020202 100%
   );
   box-shadow:
-    inset 0 2px 4px rgba(255, 255, 255, 0.12),
-    inset 0 -4px 8px rgba(0, 0, 0, 0.55),
-    0 3px 6px rgba(0, 0, 0, 0.35),
-    0 1px 0 rgba(255, 255, 255, 0.08);
+    inset 0 3px 6px rgba(255, 255, 255, 0.18),
+    inset 0 -5px 12px rgba(0, 0, 0, 0.62),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 5px 10px rgba(0, 0, 0, 0.38),
+    0 2px 3px rgba(0, 0, 0, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.1);
   transition:
     transform 0.08s ease,
     box-shadow 0.12s ease;
@@ -230,15 +248,17 @@
 
 .tuner-btn--active {
   box-shadow:
-    inset 0 1px 3px rgba(255, 255, 255, 0.2),
-    inset 0 -3px 6px rgba(0, 0, 0, 0.5),
+    inset 0 2px 5px rgba(255, 255, 255, 0.22),
+    inset 0 -4px 8px rgba(0, 0, 0, 0.52),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
     0 0 0 2px color-mix(in srgb, var(--active-region-accent) 55%, transparent),
-    0 3px 8px rgba(0, 0, 0, 0.4);
+    0 5px 14px rgba(0, 0, 0, 0.42),
+    0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .location-tuner {
-  width: min(620px, 100%);
-  margin: 0.75rem 0 1rem;
+  width: min(375px, 100%);
+  margin: 1.1rem 0 0.85rem;
   padding: 0.5rem 0.2rem 0.2rem;
   display: flex;
   flex-direction: column;
@@ -250,40 +270,102 @@
   width: 100%;
   max-width: 100%;
   margin: 0 auto 0.55rem;
-  border-radius: 6px;
-  border: 1px solid #1a1a1a;
-  background: #fff;
+  background: linear-gradient(180deg, #fafafa 0%, #f0f0f0 100%);
+  border-radius: var(--tuner-window-radius);
   /* Labels sit on a translated track and extend past the edges — hidden hides text like "BAYAREA". */
   overflow: visible;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+   box-shadow:
+    var(--tuner-depth-shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.06),
+    0 0 0 1px #5c4010;
+  border: 1px solid #d9b43a;
 }
 
 .station-window-bar {
   position: relative;
   min-height: 22px;
-  background: #000;
+  background: linear-gradient(
+    180deg,
+    #3d3d3d 0%,
+    #1a1a1a 22%,
+    #0d0d0d 50%,
+    #050505 78%,
+    #000000 100%
+  );
   box-sizing: border-box;
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.14),
+    inset 0 -4px 10px rgba(0, 0, 0, 0.55);
 }
 
 .station-window-bar--top {
   padding: 4px 0 3px;
+  border-radius: calc(var(--tuner-window-radius) - 1px) calc(var(--tuner-window-radius) - 1px) 0 0;
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.14),
+    inset 0 -4px 10px rgba(0, 0, 0, 0.55),
+    inset 0 3px 6px rgba(255, 255, 255, 0.06);
 }
 
 .station-window-bar--bottom {
   padding: 3px 0 4px;
+  border-radius: 0 0 calc(var(--tuner-window-radius) - 1px) calc(var(--tuner-window-radius) - 1px);
+  box-shadow:
+    inset 0 2px 4px rgba(255, 255, 255, 0.1),
+    inset 0 -5px 12px rgba(0, 0, 0, 0.6);
 }
 
 .station-window-gap {
   position: relative;
+  --station-gap-inset: 10px;
   height: 18px;
   background: #fff;
+  border-left: var(--station-gap-inset) solid;
+  border-right: var(--station-gap-inset) solid;
+}
+
+.station-window-dial-marks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.station-window-dial-gap {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 2px;
+  pointer-events: none;
+}
+
+.station-window-dial-line {
+  display: block;
+  height: 1px;
+  width: 100%;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.38);
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.22),
+    0 -0.5px 0 rgba(255, 255, 255, 0.06);
+  opacity: 0.75;
 }
 
 .station-window-track {
   position: relative;
   height: 100%;
   min-height: 1.1rem;
-  transform: translateX(calc(50% - (var(--tuner-position, 0.5) * 100%)));
+  z-index: 2;
 }
 
 .station-bar-label {
@@ -296,6 +378,9 @@
   letter-spacing: 0.06em;
   color: #fff;
   white-space: nowrap;
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.85),
+    0 -1px 0 rgba(255, 255, 255, 0.12);
   transition: color 0.12s ease, opacity 0.12s ease;
 }
 
@@ -307,61 +392,271 @@
 
 .station-marker {
   position: absolute;
-  left: 50%;
+  left: calc(
+    var(--station-gap-inset) +
+    (var(--tuner-position, 0.5) * (100% - (var(--station-gap-inset) * 2)))
+  );
   top: 50%;
   transform: translate(-50%, -50%);
-  width: 8px;
-  height: 10px;
-  border-radius: 1px;
-  background: var(--active-region-accent);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: linear-gradient(
+    145deg,
+    #ffb066 0%,
+    var(--active-region-accent) 42%,
+    #e65100 88%,
+    #bf360c 100%
+  );
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.45),
+    0 4px 8px rgba(0, 0, 0, 0.22),
+    inset 0 1px 1px rgba(255, 255, 255, 0.45),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.35);
 }
 
-.slider-bed {
-  position: relative;
-  width: 300px;
-  max-width: 100%;
-  height: 20px;
+/* Arrow paddles + gap — hold to slide the dial marker (slow ease in JS). */
+.light-switch {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: center;
+  width: 86px;
+  height: 40px;
   box-sizing: border-box;
-  border-radius: 1000px;
-  border: 1px solid #2a2a2a;
-  background: #000000db;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
   touch-action: none;
-  cursor: ew-resize;
   user-select: none;
+  cursor: default;
 }
 
-.slider-bed:focus-visible {
-  outline: 2px solid #2a6a9a;
+.light-switch:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.45);
   outline-offset: 3px;
+  border-radius: 4px;
 }
 
-.slider-ridges {
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  top: 50%;
-  height: 12px;
-  transform: translateY(-50%);
-  border-radius: 1000px;
-  background:
-    repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.22) 0,
-      rgba(255, 255, 255, 0.22) 1px,
-      rgba(0, 0, 0, 0.35) 1px,
-      rgba(0, 0, 0, 0.35) 4px
-    );
-  opacity: 0.65;
-  pointer-events: none;
+/* Shadow lives here — clip-path on the button would clip outer shadows off. */
+.light-switch__paddle {
+  flex: 1 1 0;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  transition: filter 0.12s ease;
+  filter:
+    drop-shadow(0 3px 5px rgba(0, 0, 0, 0.55))
+    drop-shadow(0 10px 16px rgba(0, 0, 0, 0.28));
+}
+
+.light-switch__paddle:has(.light-switch__half:active) {
+  filter:
+    drop-shadow(0 1px 2px rgba(0, 0, 0, 0.45))
+    drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
+}
+
+.light-switch__half {
+  flex: 1;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: linear-gradient(180deg, #2a2a2a 0%, #181818 45%, #0e0e0e 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 -2px 6px rgba(0, 0, 0, 0.55),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.08s ease, box-shadow 0.1s ease;
+  backface-visibility: hidden;
+}
+
+/* Chevrons: vertices must follow the perimeter in order — the old path went
+   down the outer flat then to the top-inner corner, which self-intersected
+   and drew the tiny “bowtie” triangles at the tips. */
+.light-switch__half--left {
+  clip-path: polygon(1% 41%, 44% 24%, 93% 24%, 93% 76%, 44% 76%, 1% 59%);
+}
+
+.light-switch__half--right {
+  clip-path: polygon(99% 41%, 56% 24%, 7% 24%, 7% 76%, 56% 76%, 99% 59%);
+}
+
+.light-switch__half:active {
+  transform: translateY(1px);
+  box-shadow:
+    inset 0 4px 10px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.light-switch__half:focus {
+  outline: none;
+}
+
+.light-switch__half:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
   z-index: 1;
+}
+
+/* Invisible spacer only — no “divider” bar between paddles. */
+.light-switch__gap {
+  flex: 0 0 12px;
+  width: 12px;
+  align-self: stretch;
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+
+.light-switch__screw {
+  position: absolute;
+  z-index: 1;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(circle at 32% 32%, #4a4a4a 0%, #2a2a2a 50%, #101010 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    inset 0 -1px 1px rgba(0, 0, 0, 0.6),
+    0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+/* Screws sit on the inner (gap-side) edge of each arrow. */
+.light-switch__half--left .light-switch__screw--edge-tl {
+  top: 6px;
+  right: 5px;
+  left: auto;
+}
+
+.light-switch__half--left .light-switch__screw--edge-bl {
+  bottom: 6px;
+  right: 5px;
+  left: auto;
+}
+
+.light-switch__half--right .light-switch__screw--edge-tr {
+  top: 6px;
+  left: 5px;
+  right: auto;
+}
+
+.light-switch__half--right .light-switch__screw--edge-br {
+  bottom: 6px;
+  left: 5px;
+  right: auto;
 }
 
 .embed-wrap {
   width: 100%;
-  margin-top: 0.5rem;
+  margin: 0.5rem 0 1rem;
   opacity: 0;
   animation: embed-fade-in 0.1s ease 0.06s forwards;
+  position: relative;
+}
+
+.embed-media {
+  position: relative;
+  min-height: 380px;
+  background: #121212;
+  border-radius: 12px;
+  transition: filter 0.2s ease, transform 0.2s ease;
+  isolation: isolate;
+}
+
+/* Boxy pixel “static” on the black shell while playlist / embed is swapping */
+.embed-media::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  background-color: #0c0c0c;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent calc(18px - 1px),
+      rgba(255, 255, 255, 0.06) calc(18px - 1px),
+      rgba(255, 255, 255, 0.06) 18px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent calc(18px - 1px),
+      rgba(255, 255, 255, 0.06) calc(18px - 1px),
+      rgba(255, 255, 255, 0.06) 18px
+    ),
+    repeating-conic-gradient(
+      from 0deg,
+      rgba(72, 72, 72, 0.45) 0deg 90deg,
+      rgba(28, 28, 28, 0.55) 90deg 180deg,
+      rgba(28, 28, 28, 0.55) 180deg 270deg,
+      rgba(72, 72, 72, 0.45) 270deg 360deg
+    );
+  background-size:
+    100% 100%,
+    100% 100%,
+    18px 18px;
+}
+
+.embed-media--settling::before {
+  opacity: 1;
+}
+
+.embed-wrap--paused .embed-media {
+  filter: blur(2.5px) contrast(1.12) saturate(0.7);
+  transform: scale(1.012);
+  pointer-events: none;
+}
+
+.embed-pixelate-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: 12px;
+  pointer-events: none;
+  opacity: 0.82;
+  /* Hard-edge “macro blocks”: checker + grid lines = boxy pixels */
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent calc(20px - 1px),
+      rgba(255, 255, 255, 0.38) calc(20px - 1px),
+      rgba(255, 255, 255, 0.38) 20px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent calc(20px - 1px),
+      rgba(255, 255, 255, 0.38) calc(20px - 1px),
+      rgba(255, 255, 255, 0.38) 20px
+    ),
+    repeating-conic-gradient(
+      from 0deg,
+      rgba(255, 255, 255, 0.16) 0deg 90deg,
+      rgba(255, 255, 255, 0.04) 90deg 180deg,
+      rgba(255, 255, 255, 0.04) 180deg 270deg,
+      rgba(255, 255, 255, 0.16) 270deg 360deg
+    );
+  background-size:
+    100% 100%,
+    100% 100%,
+    20px 20px;
+  mix-blend-mode: soft-light;
+  backdrop-filter: blur(4px) saturate(0.78) contrast(1.08);
 }
 
 @keyframes embed-fade-in {
@@ -375,34 +670,76 @@
 
 .embed-controller-host,
 .embed-iframe {
+  position: relative;
+  z-index: 1;
   border-radius: 12px;
   overflow: hidden;
   max-width: 100%;
 }
 
 .region-switcher {
-  margin-top: auto;
-  padding-top: 1.25rem;
+  margin-top: 0.75rem;
+  padding-top: 0;
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.region-switcher-labels-row,
+.region-switcher-knob-row {
+  display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
-.region-switcher-label {
-  font-size: 0.7rem;
+.region-switcher-abbr {
+  box-sizing: border-box;
+  width: 40px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 0.58rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: #666;
+  line-height: 1.2;
 }
 
-.region-switcher-select {
-  font-size: 0.75rem;
-  padding: 0.25rem 0.4rem;
-  max-width: 10rem;
-  border: 1px solid #ccc;
-  border-radius: 3px;
-  background: #fff;
-  color: #111;
+.region-switcher-connector-spacer {
+  width: 14px;
+  flex-shrink: 0;
+}
+
+.region-switcher-connector {
+  width: 14px;
+  height: 2px;
+  flex-shrink: 0;
+  background: #000;
+  border-radius: 1px;
+}
+
+.tuner-well--switcher {
+  width: 40px;
+  height: 40px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.tuner-well--region-active {
+  box-shadow:
+    inset 0 3px 8px rgba(0, 0, 0, 0.32),
+    inset 0 -2px 5px rgba(255, 255, 255, 0.28),
+    0 5px 12px rgba(0, 0, 0, 0.22),
+    0 2px 4px rgba(0, 0, 0, 0.16),
+    0 1px 0 rgba(255, 255, 255, 0.45),
+    0 0 0 2px var(--active-region-accent),
+    0 6px 16px color-mix(in srgb, var(--active-region-accent) 22%, transparent);
+}
+
+.tuner-btn--switcher:focus-visible {
+  outline: 2px solid #2a6a9a;
+  outline-offset: 2px;
 }
