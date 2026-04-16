@@ -26,4 +26,4 @@ python run_migrations.py
 
 ## Adding a new migration
 
-Add a new file `migrations/NNNN_description.sql` (e.g. `0003_add_foo.sql`) and run `python run_migrations.py`.
+Add a new file `migrations/NNNN_description.sql` (e.g. `0003_add_foo.sql`), run `export DATABASE_URL=postgresql://postgres:postgres@localhost/straight-outta` then `python3 run_migrations.py`.
