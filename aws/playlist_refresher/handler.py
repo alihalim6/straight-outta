@@ -13,19 +13,20 @@ import spotify
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# Map DB location name -> playlist-title friendly name
+# Map locations.name (DB code) -> playlist-title friendly name.
+# Keys match FILE_TO_LOCATION_NAME values in .cursor/skills/seed-database/scripts/seed.js.
 LOCATION_DISPLAY_NAMES = {
     # West
     "LA": "LA",
     "BAY": "Bay Area",
-    "SAC": "NorCal",
-    "SEA/POR": "Pacific Northwest",
-    "DEN": "The Rockies",
+    "SAC": "Sacramento",
+    "PNW": "Pacific Northwest",
+    "SW": "Southwest (Desert/Rockies)",
     # Midwest
-    "CHI": "Chicago",
-    "CLE": "Ohio",
-    "DET": "Michigan",
-    "STL": "Lower Midwest",
+    "CHI": "Chicago/Illinois/Gary",
+    "CLE": "Cleveland/Ohio",
+    "DET": "Detroit/Michigan",
+    "STL": "St. Louis/Lower Midwest",
     "MIL": "Milwaukee",
     # South
     "FL": "Florida",
@@ -33,14 +34,14 @@ LOCATION_DISPLAY_NAMES = {
     "HOU": "Houston",
     "DFW": "Dallas",
     "MISS": "Mississippi",
-    "NO": "New Orleans",
-    "TENN": "Tennessee",
+    "NO": "NOLA",
+    "MEM": "Memphis/Tenn",
     # East
     "NY": "NY",
     "BUF": "Buffalo",
     "PHI": "Philly",
     "PITT": "Pittsburgh",
-    "NE": "Northeast",
+    "NE": "Boston/Northeast",
     "DMV": "DMV",
     "VA": "Virginia",
     "NC/SC": "Carolinas",
@@ -100,7 +101,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     logger.warning("No tracks for %s, skipping", location_name)
                     continue
 
-                playlist_name = f"{_playlist_display_name(location_name)} {config.PLAYLIST_NAME_SUFFFIX}"
+                playlist_name = f"{_playlist_display_name(location_name)}{config.PLAYLIST_NAME_SUFFFIX}"
                 existing_playlist_id = db.get_playlist_for_location(
                     conn, location_id
                 )

@@ -77,6 +77,7 @@ def search_tracks(
     """
     Search for tracks: one call per artist (from a random sample of ARTISTS_PER_QUERY),
     gather all results (deduplicated), shuffle, then select up to limit_tracks.
+    Only includes a track if the searched artist is the primary (first-listed) artist.
     Returns list of track URIs (spotify:track:id).
     """
     if not artists:
@@ -108,10 +109,11 @@ def search_tracks(
         tracks = data.get("tracks", {}).get("items", [])
         artist_lower = artist.lower().strip()
         for t in tracks:
-            track_artists = {
-                a.get("name", "").lower().strip() for a in t.get("artists", [])
-            }
-            if artist_lower not in track_artists:
+            artists_list = t.get("artists") or []
+            if not artists_list:
+                continue
+            primary = artists_list[0].get("name", "").lower().strip()
+            if primary != artist_lower:
                 continue
             uri = t.get("uri")
             if uri and uri.startswith("spotify:track:") and uri not in seen:

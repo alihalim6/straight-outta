@@ -11,22 +11,7 @@ Invoke the Lambda from an HTTP API (e.g. API Gateway HTTP API). The client must 
 
 If the header is missing or invalid, the Lambda returns `401`. Configure your API to call this Lambda and pass the request through (including headers).
 
-## Run locally
-
-From `aws/playlist_refresher/` (or repo root with `python aws/playlist_refresher/run_local.py`), run these in dedicated terminal:
-
-```bash
-cd aws/playlist_refresher
-python3 -m pip install -r requirements.txt
-export DATABASE_URL="postgresql://postgres:postgres@localhost/straight-outta"
-export SPOTIFY_CLIENT_ID="your-client-id"
-export SPOTIFY_CLIENT_SECRET="your-client-secret"
-## Obtain from PKCE in UI, update as needed.
-export SPOTIFY_ACCESS_TOKEN="your-user-access-token"
-python3 run_local.py
-```
-
-Optional: copy `.env.example` to `.env`, fill in values, and `pip install python-dotenv` so `run_local.py` loads them automatically.
+Optional: copy `.env.example` to `.env` in this directory; the dev API’s `POST /api/refresh` merges it with the process environment when running the handler locally.
 
 ## Build
 
