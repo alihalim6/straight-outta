@@ -12,42 +12,42 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, '..');
-const artistRegionsDir = path.join(repoRoot, '.cursor', 'skills', 'seed-database', 'artist-regions');
+const artistRegionsDir = path.resolve(__dirname, '..', 'artist-regions');
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost/straight-outta';
 
-// Map .txt filename (without extension) to display name from skill
+// Map .txt filename (without extension) -> locations.name (DB code).
+// Order and codes match LOCATION_DISPLAY_NAMES keys in aws/playlist_refresher/handler.py.
 const FILE_TO_LOCATION_NAME = {
+  // West
   'los-angeles': 'LA',
-  'bay-area': 'Bay Area',
+  'bay-area': 'BAY',
+  'norcal': 'SAC',
+  'pacific-nw': 'PNW',
+  'southwest': 'SW',
+  // Midwest
+  'chicago': 'CHI',
+  'ohio': 'CLE',
+  'michigan': 'DET',
+  'lower-midwest': 'STL',
+  'milwaukee': 'MIL',
+  // South
+  'florida': 'FL',
   'atlanta': 'ATL',
-  'norcal': 'NorCal',
-  'four-corners': 'Four Corners',
-  'pacific-nw': 'Pacific NW',
-  'sd': 'San Diego',
-  'chicago': 'Chicago',
-  'ohio': 'Ohio',
-  'michigan': 'Michigan',
-  'st-louis': 'St. Louis',
-  'kc': 'KC',
-  'kentucky': 'Kentucky',
-  'milwaukee': 'Milwaukee',
-  'fl': 'FL',
-  'h-town': 'H-Town',
+  'houston': 'HOU',
   'dfw': 'DFW',
-  'mississippi': 'Mississippi',
-  'alabama': 'Alabama',
-  'no': 'NO',
-  'tenn': 'Tenn',
+  'mississippi': 'MISS',
+  'new-orleans': 'NO',
+  'tenn': 'MEM',
+  // East
   'ny': 'NY',
-  'buffalo': 'Buffalo',
-  'philly': 'Philly',
-  'pittsburgh': 'Pittsburgh',
-  'new-england': 'New England',
+  'buffalo': 'BUF',
+  'philly': 'PHI',
+  'pittsburgh': 'PITT',
+  'northeast': 'NE',
   'dmv': 'DMV',
-  'va': 'VA',
-  'carolinas': 'Carolinas',
+  'virginia': 'VA',
+  'carolinas': 'NC/SC',
 };
 
 const REGION_FOLDER_TO_NAME = {
