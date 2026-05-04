@@ -5,7 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: '127.0.0.1', // Use explicit IPv4
+    // Spotify redirect URIs cannot use the hostname "localhost"; use 127.0.0.1 and open the app there.
+    host: '127.0.0.1',
     port: 5173,
     proxy: {
       '/api': 'http://127.0.0.1:3001',

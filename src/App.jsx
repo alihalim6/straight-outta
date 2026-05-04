@@ -1,5 +1,27 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, Fragment } from "react";
 import "./App.css";
+import { ensureValidAccessToken, redirectToSpotifyLogin } from "./lib/spotifyAuth";
+
+/** Endpoint that invokes the playlist refresher; dev proxies /api/refresh → server/api.js. */
+const REFRESH_API_URL = import.meta.env.VITE_API_URL || "/api/refresh";
+/** How long the user must hold RESET before we fire the region refresh. */
+const RESET_HOLD_MS = 3000;
+
+/** Builds refresh URL with region_id query (handles absolute URLs and existing ?params). */
+function buildRefreshRequestUrl(regionIdStr) {
+  const base = REFRESH_API_URL || "/api/refresh";
+  try {
+    const resolved =
+      base.startsWith("http://") || base.startsWith("https://")
+        ? new URL(base)
+        : new URL(base, window.location.origin);
+    resolved.searchParams.set("region_id", regionIdStr);
+    return resolved.toString();
+  } catch {
+    const sep = base.includes("?") ? "&" : "?";
+    return `${base}${sep}region_id=${encodeURIComponent(regionIdStr)}`;
+  }
+}
 
 const DIAMOND_REGIONS = [
   { name: "Midwest", className: "region-slot region-slot--midwest" },
@@ -30,8 +52,65 @@ const REGION_SWITCHER_ABBR = {
 const TUNER_ALIGNMENT_THRESHOLD = 0.045;
 const STATION_LABEL_EDGE_INSET = 0.03;
 /** Lower = slower, smoother slide toward 0/1 while a paddle is held. */
-const TUNER_HOLD_APPROACH_PER_S = 2.5;
-const TUNER_KEYBOARD_NUDGE = 0.012;
+const TUNER_HOLD_APPROACH_PER_S = 1.2;
+/** Snap to exact 0/1 while holding when this close (exponential easing never fully arrives). */
+const TUNER_HOLD_SNAP_EPS = 0.0035;
+/** Floor on closing speed (full-span units per second) so the dial doesn't crawl at the end. */
+const TUNER_HOLD_MIN_CLOSE_PER_S = 0.58;
+const TUNER_KEYBOARD_NUDGE = 0.008;
+const STATIC_AUDIO_SRC = "/static.m4a";
+const STATIC_AUDIO_VOLUME = 0.36;
+
+const LOADING_TRACE_TASKS = [
+  "hydrate playlist cache",
+  "sync station graph",
+  "diff region manifests",
+  "normalize artist seeds",
+  "prime embed handoff",
+  "verify playback grants",
+  "warm edge transport",
+  "merge station snapshots",
+];
+
+const LOADING_TRACE_SYMBOLS = [
+  "refreshRegion()",
+  "resolvePlaylist()",
+  "hydrateLocations()",
+  "embedHandshake()",
+  "runAuthReplay()",
+  "queueTunerFrame()",
+];
+
+function loadingTimestamp() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  const ms = String(now.getMilliseconds()).padStart(3, "0");
+  return `${hh}:${mm}:${ss}.${ms}`;
+}
+
+function buildLoadingTraceLine(seq) {
+  const task = LOADING_TRACE_TASKS[seq % LOADING_TRACE_TASKS.length];
+  const symbol = LOADING_TRACE_SYMBOLS[seq % LOADING_TRACE_SYMBOLS.length];
+  const latency = 20 + ((seq * 37) % 180);
+  const depth = 140 + (seq % 30);
+  const column = 8 + ((seq * 3) % 44);
+  const level = seq % 9 === 0 ? "WARN" : "INFO";
+  const mode = seq % 4;
+  const stamp = loadingTimestamp();
+
+  if (mode === 0) {
+    return `${stamp} [${level}] ${task} :: ${latency}ms`;
+  }
+  if (mode === 1) {
+    return `${stamp} stack> at ${symbol} (App.jsx:${depth}:${column})`;
+  }
+  if (mode === 2) {
+    return `${stamp} fetch /api/refresh?phase=bootstrap -> 200 (${latency}ms)`;
+  }
+  return `${stamp} trace#${String(seq).padStart(4, "0")} ${task} [ok]`;
+}
 
 function regionIdByName(regions, targetName) {
   const t = targetName.toLowerCase();
@@ -104,34 +183,266 @@ function dialGapsFromTuning(tuningPoints) {
   return out;
 }
 
+function RadioBrandHeader() {
+  const MAX_TILT_DEG = 20;
+  const [tiltActive, setTiltActive] = useState(false);
+  const tiltShellRef = useRef(null);
+  const tiltRafRef = useRef(null);
+  const pointerPointRef = useRef({ x: 0, y: 0 });
+
+  const applyLogoTilt = () => {
+    tiltRafRef.current = null;
+    const shell = tiltShellRef.current;
+    if (!shell) return;
+    const rect = shell.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const px = (pointerPointRef.current.x - rect.left) / rect.width;
+    const py = (pointerPointRef.current.y - rect.top) / rect.height;
+    const clampedX = clamp01(px);
+    const clampedY = clamp01(py);
+    shell.style.setProperty("--logo-tilt-x", `${((0.5 - clampedY) * (MAX_TILT_DEG * 2)).toFixed(2)}deg`);
+    shell.style.setProperty("--logo-tilt-y", `${((clampedX - 0.5) * (MAX_TILT_DEG * 2)).toFixed(2)}deg`);
+    shell.style.setProperty("--logo-glare-x", `${(clampedX * 100).toFixed(2)}%`);
+    shell.style.setProperty("--logo-glare-y", `${(clampedY * 100).toFixed(2)}%`);
+  };
+
+  const queueLogoTiltUpdate = (clientX, clientY) => {
+    pointerPointRef.current = { x: clientX, y: clientY };
+    if (tiltRafRef.current != null) return;
+    tiltRafRef.current = requestAnimationFrame(applyLogoTilt);
+  };
+
+  function handleLogoPointerMove(e) {
+    queueLogoTiltUpdate(e.clientX, e.clientY);
+  }
+
+  function resetLogoTilt() {
+    setTiltActive(false);
+    if (tiltRafRef.current != null) {
+      cancelAnimationFrame(tiltRafRef.current);
+      tiltRafRef.current = null;
+    }
+    const shell = tiltShellRef.current;
+    if (!shell) return;
+    shell.style.setProperty("--logo-tilt-x", "0deg");
+    shell.style.setProperty("--logo-tilt-y", "0deg");
+    shell.style.setProperty("--logo-glare-x", "50%");
+    shell.style.setProperty("--logo-glare-y", "42%");
+  }
+
+  useEffect(() => {
+    if (!tiltActive) return;
+    function handleWindowPointerMove(e) {
+      queueLogoTiltUpdate(e.clientX, e.clientY);
+    }
+    window.addEventListener("pointermove", handleWindowPointerMove, { passive: true });
+    return () => window.removeEventListener("pointermove", handleWindowPointerMove);
+  }, [tiltActive]);
+
+  useEffect(() => () => {
+    if (tiltRafRef.current != null) {
+      cancelAnimationFrame(tiltRafRef.current);
+    }
+  }, []);
+
+  return (
+    <header className="radio-header">
+      <div
+        ref={tiltShellRef}
+        className={`radio-brand-tilt-shell${tiltActive ? " radio-brand-tilt-shell--active" : ""}`}
+        onPointerEnter={(e) => {
+          setTiltActive(true);
+          handleLogoPointerMove(e);
+        }}
+        onPointerMove={handleLogoPointerMove}
+        onPointerLeave={resetLogoTilt}
+        onPointerCancel={resetLogoTilt}
+      >
+        <div className="radio-brand-stack">
+          <div className="radio-brand-line radio-brand-line--top" aria-hidden="true">
+            {"WAUX".split("").map((ch, i) => (
+              <span key={`waux-${i}`} className="radio-brand-glyph">
+                {ch}
+              </span>
+            ))}
+          </div>
+          <div className="radio-logo-shell">
+            <img className="radio-logo" src="/logo.jpg" alt="WAUX 91.7FM" />
+          </div>
+          <div className="radio-brand-line radio-brand-line--bottom" aria-hidden="true">
+            {"91.7FM".split("").map((ch, i) => (
+              <span
+                key={`fm-${i}`}
+                className={`radio-brand-glyph${ch === "." ? " radio-brand-glyph--dot" : ""}`}
+              >
+                {ch}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function EmbedLoadingConsole({ headline = "Booting broadcast systems...", exiting = false }) {
+  const visibleLineCount = 16;
+  const lineHeightPx = 18;
+  const [lines, setLines] = useState(() =>
+    Array.from({ length: visibleLineCount + 4 }, (_, idx) => ({
+      id: idx,
+      text: buildLoadingTraceLine(idx),
+    }))
+  );
+
+  useEffect(() => {
+    let seq = visibleLineCount + 4;
+    const timer = window.setInterval(() => {
+      setLines((prev) => {
+        const next = [...prev, { id: seq, text: buildLoadingTraceLine(seq) }];
+        seq += 1;
+        return next.slice(-64);
+      });
+    }, 85);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const hiddenRows = Math.max(0, lines.length - visibleLineCount);
+
+  return (
+    <div
+      className={`embed-loading-shell${exiting ? " embed-loading-shell--exiting" : ""}`}
+      role="status"
+      aria-live="polite"
+      aria-label={headline}
+    >
+      <div className="embed-loading-header">{headline}</div>
+      <div className="embed-loading-viewport" aria-hidden="true">
+        <div
+          className="embed-loading-track"
+          style={{ transform: `translateY(-${hiddenRows * lineHeightPx}px)` }}
+        >
+          {lines.map((line) => (
+            <div
+              key={line.id}
+              className={`embed-loading-line${line.text.includes("[WARN]") ? " embed-loading-line--warn" : ""}`}
+            >
+              {line.text}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
+  const [authPhase, setAuthPhase] = useState("pending");
+  const [loginGateError, setLoginGateError] = useState("");
   const [regions, setRegions] = useState([]);
   const [locations, setLocations] = useState([]);
   const [selectedRegion, setSelectedRegion] = useState("");
   const [selectedLocation, setSelectedLocation] = useState("");
   const [activePlaylistId, setActivePlaylistId] = useState(null);
   const [embedSettling, setEmbedSettling] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [authPendingExit, setAuthPendingExit] = useState(false);
+  const [loadingExit, setLoadingExit] = useState(false);
   const [error, setError] = useState("");
+  /** `controller` uses Iframe API play() for reliable autoplay; `iframe` is cache-busted fallback. */
   const [embedMode, setEmbedMode] = useState("iframe");
+  /** Bumped when iframe-api/v1 loads so createController runs (apiRef alone does not re-render). */
+  const [spotifyIframeApiGeneration, setSpotifyIframeApiGeneration] = useState(() =>
+    typeof window !== "undefined" && window.__SpotifyIframeAPI ? 1 : 0
+  );
   const [tunerMounted, setTunerMounted] = useState(true);
   const [tunerFadeOut, setTunerFadeOut] = useState(false);
   const [tunerPosition, setTunerPosition] = useState(0.5);
+  const [resetCountdown, setResetCountdown] = useState(null);
+  const [resetting, setResetting] = useState(false);
+  const [resettingRegionId, setResettingRegionId] = useState(null);
+  const [resetMessage, setResetMessage] = useState("");
+  /** Bumped after a successful region refresh to force the embed to reload fresh tracks. */
+  const [playlistRefreshNonce, setPlaylistRefreshNonce] = useState(0);
+  const resetTickRef = useRef(null);
+  const resetTriggerRef = useRef(null);
+  const resetMessageTimerRef = useRef(null);
   const apiRef = useRef(null);
   const controllerRef = useRef(null);
   const controllerHostRef = useRef(null);
+  const staticAudioRef = useRef(null);
+  const shouldPauseEmbedRef = useRef(false);
   const tunerPressedRef = useRef(null);
   const tunerRafRef = useRef(null);
   const tunerRafTimeRef = useRef(0);
-  const shouldPauseEmbedRef = useRef(false);
   const regionsRef = useRef(regions);
   regionsRef.current = regions;
   const selectedRegionRef = useRef(selectedRegion);
   selectedRegionRef.current = selectedRegion;
 
   useEffect(() => {
+    let cancelled = false;
+    ensureValidAccessToken().then((token) => {
+      if (cancelled) return;
+      if (token) {
+        setLoading(true);
+        setAuthPhase("ok");
+      } else {
+        setAuthPhase("anon");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (authPhase !== "ok") return;
+    const id = window.setInterval(() => {
+      ensureValidAccessToken().then((token) => {
+        if (!token) setAuthPhase("anon");
+      });
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [authPhase]);
+
+  useEffect(() => {
+    if (authPhase === "pending") {
+      setAuthPendingExit(false);
+      return;
+    }
+    setAuthPendingExit(true);
+    const id = window.setTimeout(() => setAuthPendingExit(false), 220);
+    return () => window.clearTimeout(id);
+  }, [authPhase]);
+
+  useEffect(() => {
+    if (loading) {
+      setLoadingExit(false);
+      return;
+    }
+    if (authPhase !== "ok") return;
+    setLoadingExit(true);
+    const id = window.setTimeout(() => setLoadingExit(false), 220);
+    return () => window.clearTimeout(id);
+  }, [loading, authPhase]);
+
+  useEffect(() => {
+    if (authPhase !== "ok") return;
+    function onVisibility() {
+      if (document.visibilityState !== "visible") return;
+      ensureValidAccessToken().then((token) => {
+        if (!token) setAuthPhase("anon");
+      });
+    }
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [authPhase]);
+
+  useEffect(() => {
     if (window.__SpotifyIframeAPI) {
       apiRef.current = window.__SpotifyIframeAPI;
+      setSpotifyIframeApiGeneration((n) => (n ? n : 1));
       return;
     }
 
@@ -147,6 +458,7 @@ function App() {
     window.onSpotifyIframeApiReady = (IFrameAPI) => {
       window.__SpotifyIframeAPI = IFrameAPI;
       apiRef.current = IFrameAPI;
+      setSpotifyIframeApiGeneration((n) => n + 1);
       if (typeof previousHandler === "function") {
         previousHandler(IFrameAPI);
       }
@@ -154,6 +466,8 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (authPhase !== "ok") return;
+
     fetch("/api/regions")
       .then((r) => r.json())
       .then((data) => {
@@ -162,7 +476,7 @@ function App() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [authPhase]);
 
   useEffect(() => {
     if (!selectedRegion) {
@@ -219,7 +533,7 @@ function App() {
       return;
     }
     setEmbedSettling(true);
-  }, [activePlaylistId]);
+  }, [activePlaylistId, playlistRefreshNonce]);
 
   useEffect(() => {
     if (!embedSettling) return;
@@ -241,13 +555,37 @@ function App() {
   const alignmentThreshold = playableLocations.length <= 1 ? 1 : TUNER_ALIGNMENT_THRESHOLD;
   const isAligned = nearest.distance <= alignmentThreshold;
   const betweenStations = Boolean(activePlaylistId && selectedRegion && playableLocations.length && !isAligned);
+  const shouldPlayStatic =
+    authPhase === "pending" ||
+    authPendingExit ||
+    loading ||
+    loadingExit ||
+    embedSettling ||
+    betweenStations;
+
+  useEffect(() => {
+    const audio = staticAudioRef.current;
+    if (!audio) return;
+    if (shouldPlayStatic) {
+      audio.play().catch(() => {
+        // Ignore autoplay restrictions until the user interacts.
+      });
+      return;
+    }
+    audio.pause();
+    audio.currentTime = 0;
+  }, [shouldPlayStatic]);
 
   const regionPickerRegions = sortRegionsForPicker(regions);
   const postDiamondReveal = !selectedRegion || !tunerMounted;
   const showEmbed = Boolean(activePlaylistId && postDiamondReveal);
   const showRegionSwitcher = Boolean(selectedRegion && postDiamondReveal);
-  const showLocationTuner = Boolean(
-    selectedRegion && playableLocations.length && postDiamondReveal
+  const showLocationTuner = Boolean(selectedRegion && postDiamondReveal);
+
+  /** New timestamp whenever playlist or refresh nonce changes — busts Spotify embed CDN cache (same playlist id after replace_playlist_items). */
+  const embedCacheBust = useMemo(
+    () => Date.now(),
+    [activePlaylistId, playlistRefreshNonce]
   );
 
   useEffect(() => {
@@ -272,7 +610,7 @@ function App() {
         mount,
         {
           uri: `spotify:playlist:${activePlaylistId}`,
-          width: '100%',
+          width: "100%",
           height: 380,
         },
         (controller) => {
@@ -302,7 +640,7 @@ function App() {
       controllerRef.current?.destroy();
       controllerRef.current = null;
     };
-  }, [activePlaylistId, showEmbed]);
+  }, [activePlaylistId, showEmbed, playlistRefreshNonce, spotifyIframeApiGeneration]);
 
   useEffect(() => {
     if (!isAligned || !nearestLocation) return;
@@ -351,11 +689,161 @@ function App() {
         prev === 0 ? 1 / 60 : Math.min(0.032, (time - prev) / 1000);
       const target = pressed === "left" ? 0 : 1;
       const k = 1 - Math.exp(-TUNER_HOLD_APPROACH_PER_S * dt);
-      setTunerPosition((p) => clamp01(p + (target - p) * k));
+      const minStep = TUNER_HOLD_MIN_CLOSE_PER_S * dt;
+      setTunerPosition((p) => {
+        const dist = Math.abs(target - p);
+        if (dist <= TUNER_HOLD_SNAP_EPS) return target;
+        let delta = (target - p) * k;
+        if (Math.abs(delta) < minStep) {
+          const toward = target > p ? 1 : -1;
+          delta = toward * Math.min(dist, minStep);
+        }
+        return clamp01(p + delta);
+      });
       tunerRafRef.current = requestAnimationFrame(step);
     };
     tunerRafRef.current = requestAnimationFrame(step);
   };
+
+  function clearResetHoldTimers() {
+    if (resetTickRef.current != null) {
+      window.clearInterval(resetTickRef.current);
+      resetTickRef.current = null;
+    }
+    if (resetTriggerRef.current != null) {
+      window.clearTimeout(resetTriggerRef.current);
+      resetTriggerRef.current = null;
+    }
+  }
+
+  useEffect(() => () => {
+    clearResetHoldTimers();
+    if (resetMessageTimerRef.current != null) {
+      window.clearTimeout(resetMessageTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    const audio = new Audio(STATIC_AUDIO_SRC);
+    audio.loop = true;
+    audio.preload = "auto";
+    audio.volume = STATIC_AUDIO_VOLUME;
+    staticAudioRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      staticAudioRef.current = null;
+    };
+  }, []);
+
+  // Cancel any in-flight hold/countdown if user changes region.
+  useEffect(() => {
+    clearResetHoldTimers();
+    setResetCountdown(null);
+  }, [selectedRegion]);
+
+  /**
+   * Refetch /api/locations for the current region without resetting selectedLocation
+   * or tunerPosition (so the user keeps their tuned station).
+   */
+  async function reloadLocationsForCurrentRegion() {
+    const regionId = selectedRegionRef.current;
+    if (!regionId) return;
+    try {
+      const res = await fetch(`/api/locations?region_id=${regionId}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.error) return;
+      if (String(selectedRegionRef.current) !== regionId) return;
+      setLocations(data);
+    } catch {
+      /* ignore — embed reload below still forces fresh tracks for existing playlists */
+    }
+  }
+
+  async function fireRegionRefresh(regionId) {
+    const regionIdStr = String(regionId);
+    setResetting(true);
+    setResettingRegionId(regionIdStr);
+    setResetMessage("");
+    try {
+      const token = await ensureValidAccessToken();
+      if (!token) {
+        setAuthPhase("anon");
+        setResetMessage("Log in with Spotify to refresh.");
+        return;
+      }
+      const url = buildRefreshRequestUrl(regionIdStr);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ region_id: Number(regionIdStr) }),
+      });
+      const text = await res.text();
+      if (!res.ok) {
+        setResetMessage(`Refresh failed (${res.status}): ${text || res.statusText}`);
+        return;
+      }
+      setResetMessage("Region playlists refreshed.");
+      // If the user is still on the region we just refreshed, pick up any new
+      // playlist_ids and force the embed to reload (replace_playlist_items keeps
+      // the same playlist id, so a plain re-render would otherwise show stale tracks).
+      if (selectedRegionRef.current === regionIdStr) {
+        await reloadLocationsForCurrentRegion();
+        setPlaylistRefreshNonce((n) => n + 1);
+      }
+    } catch (e) {
+      setResetMessage(`Refresh failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setResetting(false);
+      setResettingRegionId(null);
+      if (resetMessageTimerRef.current != null) {
+        window.clearTimeout(resetMessageTimerRef.current);
+      }
+      resetMessageTimerRef.current = window.setTimeout(() => {
+        setResetMessage("");
+        resetMessageTimerRef.current = null;
+      }, 4000);
+    }
+  }
+
+  function handleResetDown(e) {
+    if (e.button === 2) return;
+    if (!selectedRegion || resetting || resetCountdown !== null) return;
+    e.preventDefault();
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    setResetMessage("");
+    setResetCountdown(3);
+    resetTickRef.current = window.setInterval(() => {
+      setResetCountdown((c) => (c != null && c > 1 ? c - 1 : c));
+    }, 1000);
+    const regionId = selectedRegion;
+    resetTriggerRef.current = window.setTimeout(() => {
+      clearResetHoldTimers();
+      setResetCountdown(null);
+      fireRegionRefresh(regionId);
+    }, RESET_HOLD_MS);
+  }
+
+  function handleResetCancel(e) {
+    if (resetting) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (resetCountdown == null && resetTickRef.current == null) return;
+    clearResetHoldTimers();
+    setResetCountdown(null);
+  }
 
   function handleTunerHalfDown(side, e) {
     if (e.button === 2) return;
@@ -409,10 +897,65 @@ function App() {
   const topStationEntries = stationEntries.filter((_, index) => index % 2 === 0);
   const bottomStationEntries = stationEntries.filter((_, index) => index % 2 === 1);
 
-  if (loading) {
+  if (authPhase === "pending" || authPendingExit) {
     return (
       <div className="radio-app">
-        <div className="radio-shell radio-shell--loading">Loading regions…</div>
+        <div className="radio-shell radio-shell--main">
+          <RadioBrandHeader />
+          <div className="radio-body">
+            <div className="radio-shell radio-shell--loading" aria-busy="true">
+              <EmbedLoadingConsole
+                headline="Handshaking with Spotify..."
+                exiting={authPhase !== "pending"}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (authPhase === "anon") {
+    return (
+      <div className="radio-app">
+        <div className="radio-shell radio-shell--main">
+          <RadioBrandHeader />
+          <div className="radio-auth-gate">
+            <button
+              type="button"
+              className="radio-auth-cta"
+              onClick={() => {
+                setLoginGateError("");
+                redirectToSpotifyLogin().catch((e) =>
+                  setLoginGateError(e instanceof Error ? e.message : String(e))
+                );
+              }}
+            >
+              Log in with Spotify
+            </button>
+            {loginGateError ? (
+              <p className="radio-shell radio-shell--error radio-auth-error">{loginGateError}</p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || loadingExit) {
+    return (
+      <div className="radio-app">
+        <div className="radio-shell radio-shell--main">
+          <RadioBrandHeader />
+          <div className="radio-body">
+            <div className="radio-shell radio-shell--loading" aria-busy="true">
+              <EmbedLoadingConsole
+                headline="Rebuilding regional playlists..."
+                exiting={!loading}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -420,7 +963,10 @@ function App() {
   if (error) {
     return (
       <div className="radio-app">
-        <div className="radio-shell radio-shell--error">{error}</div>
+        <div className="radio-shell radio-shell--main">
+          <RadioBrandHeader />
+          <div className="radio-shell radio-shell--error">{error}</div>
+        </div>
       </div>
     );
   }
@@ -428,28 +974,7 @@ function App() {
   return (
     <div className="radio-app">
       <div className="radio-shell radio-shell--main">
-        <header className="radio-header">
-          <div className="radio-brand-stack">
-            <div className="radio-brand-line radio-brand-line--top" aria-hidden="true">
-              {"WAUX".split("").map((ch, i) => (
-                <span key={`waux-${i}`} className="radio-brand-glyph">
-                  {ch}
-                </span>
-              ))}
-            </div>
-            <img className="radio-logo" src="/logo.jpg" alt="WAUX 91.7FM" />
-            <div className="radio-brand-line radio-brand-line--bottom" aria-hidden="true">
-              {"91.7FM".split("").map((ch, i) => (
-                <span
-                  key={`fm-${i}`}
-                  className={`radio-brand-glyph${ch === "." ? " radio-brand-glyph--dot" : ""}`}
-                >
-                  {ch}
-                </span>
-              ))}
-            </div>
-          </div>
-        </header>
+        <RadioBrandHeader />
 
         <div className="radio-body">
           {tunerMounted && (
@@ -497,13 +1022,13 @@ function App() {
                 />
                 {embedMode === "iframe" && (
                   <iframe
+                    key={`${activePlaylistId}-${playlistRefreshNonce}-${embedCacheBust}`}
                     title="Spotify playlist"
-                    src={`https://open.spotify.com/embed/playlist/${activePlaylistId}?autoplay=true`}
+                    src={`https://open.spotify.com/embed/playlist/${activePlaylistId}?autoplay=true&cb=${embedCacheBust}`}
                     width="100%"
                     height="380"
                     allowFullScreen
                     allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-                    loading="lazy"
                     className="embed-iframe"
                     onLoad={() => setEmbedSettling(false)}
                   />
@@ -521,137 +1046,188 @@ function App() {
           {showLocationTuner && (
             <section className="location-tuner" aria-label="Location tuner">
               <div
-                className="station-window"
-                role="presentation"
-                style={{ "--tuner-position": tunerPosition }}
+                className="reset-countdown"
+                aria-live="polite"
+                data-visible={resetCountdown != null || resetMessage ? "true" : "false"}
               >
-                <div className="station-window-bar station-window-bar--top">
-                  <div className="station-window-dial-marks" aria-hidden="true">
-                    {dialGaps.map((gap, i) => (
-                      <div
-                        key={`dial-top-${i}`}
-                        className="station-window-dial-gap"
-                        style={{
-                          left: `${gap.left * 100}%`,
-                          width: `${gap.width * 100}%`,
-                        }}
-                      >
-                        <span className="station-window-dial-line" />
-                        <span className="station-window-dial-line" />
-                        <span className="station-window-dial-line" />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="station-window-track">
-                    {topStationEntries.map(({ location, index }) => {
-                      const point = tuningPoints[index] ?? 0;
-                      return (
-                        <div
-                          key={location.id}
-                          className={`station-bar-label${String(location.id) === selectedLocation ? " station-bar-label--active" : ""}`}
-                          style={stationLabelStyle(point)}
-                        >
-                          {stationLabel(location.name)}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="station-window-gap">
-                  <div className="station-marker" aria-hidden="true" />
-                </div>
-                <div className="station-window-bar station-window-bar--bottom">
-                  <div className="station-window-dial-marks" aria-hidden="true">
-                    {dialGaps.map((gap, i) => (
-                      <div
-                        key={`dial-bottom-${i}`}
-                        className="station-window-dial-gap"
-                        style={{
-                          left: `${gap.left * 100}%`,
-                          width: `${gap.width * 100}%`,
-                        }}
-                      >
-                        <span className="station-window-dial-line" />
-                        <span className="station-window-dial-line" />
-                        <span className="station-window-dial-line" />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="station-window-track">
-                    {bottomStationEntries.map(({ location, index }) => {
-                      const point = tuningPoints[index] ?? 0;
-                      return (
-                        <div
-                          key={location.id}
-                          className={`station-bar-label${String(location.id) === selectedLocation ? " station-bar-label--active" : ""}`}
-                          style={stationLabelStyle(point)}
-                        >
-                          {stationLabel(location.name)}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                {resetCountdown != null
+                  ? `Resetting playlists for region in ${resetCountdown}…`
+                  : resetMessage}
               </div>
+              {playableLocations.length > 0 ? (
+                <>
+                  <div
+                    className="station-window"
+                    role="presentation"
+                    style={{ "--tuner-position": tunerPosition }}
+                  >
+                    <div className="station-window-bar station-window-bar--top">
+                      <div className="station-window-dial-marks" aria-hidden="true">
+                        {dialGaps.map((gap, i) => (
+                          <div
+                            key={`dial-top-${i}`}
+                            className="station-window-dial-gap"
+                            style={{
+                              left: `${gap.left * 100}%`,
+                              width: `${gap.width * 100}%`,
+                            }}
+                          >
+                            <span className="station-window-dial-line" />
+                            <span className="station-window-dial-line" />
+                            <span className="station-window-dial-line" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="station-window-track">
+                        {topStationEntries.map(({ location, index }) => {
+                          const point = tuningPoints[index] ?? 0;
+                          return (
+                            <div
+                              key={location.id}
+                              className={`station-bar-label${String(location.id) === selectedLocation ? " station-bar-label--active" : ""}`}
+                              style={stationLabelStyle(point)}
+                            >
+                              {stationLabel(location.name)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="station-window-gap">
+                      <div className="station-marker" aria-hidden="true" />
+                    </div>
+                    <div className="station-window-bar station-window-bar--bottom">
+                      <div className="station-window-dial-marks" aria-hidden="true">
+                        {dialGaps.map((gap, i) => (
+                          <div
+                            key={`dial-bottom-${i}`}
+                            className="station-window-dial-gap"
+                            style={{
+                              left: `${gap.left * 100}%`,
+                              width: `${gap.width * 100}%`,
+                            }}
+                          >
+                            <span className="station-window-dial-line" />
+                            <span className="station-window-dial-line" />
+                            <span className="station-window-dial-line" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="station-window-track">
+                        {bottomStationEntries.map(({ location, index }) => {
+                          const point = tuningPoints[index] ?? 0;
+                          return (
+                            <div
+                              key={location.id}
+                              className={`station-bar-label${String(location.id) === selectedLocation ? " station-bar-label--active" : ""}`}
+                              style={stationLabelStyle(point)}
+                            >
+                              {stationLabel(location.name)}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="tuner-controls-row">
+                    <div
+                      className="light-switch"
+                      role="group"
+                      tabIndex={0}
+                    aria-valuemin={0}
+                    aria-valuemax={1000}
+                    aria-valuenow={Math.round(tunerPosition * 1000)}
+                    aria-label="Tune location"
+                    aria-valuetext={
+                      nearestLocation?.name
+                        ? `${nearestLocation.name}${isAligned ? "" : " (between stations)"}`
+                        : undefined
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                        e.preventDefault();
+                        const delta =
+                          e.key === "ArrowLeft" ? -TUNER_KEYBOARD_NUDGE : TUNER_KEYBOARD_NUDGE;
+                        setTunerPosition((p) => clamp01(p + delta));
+                      } else if (e.key === "Home") {
+                        e.preventDefault();
+                        setTunerPosition(0);
+                      } else if (e.key === "End") {
+                        e.preventDefault();
+                        setTunerPosition(1);
+                      }
+                    }}
+                  >
+                    <span className="light-switch__paddle">
+                      <button
+                        type="button"
+                        className="light-switch__half light-switch__half--left"
+                        aria-label="Tune toward previous stations, press and hold"
+                        tabIndex={-1}
+                        onPointerDown={(e) => handleTunerHalfDown("left", e)}
+                        onPointerUp={handleTunerHalfEnd}
+                        onPointerCancel={handleTunerHalfEnd}
+                      >
+                        <span className="light-switch__screw light-switch__screw--edge-tl" aria-hidden="true" />
+                        <span className="light-switch__screw light-switch__screw--edge-bl" aria-hidden="true" />
+                      </button>
+                    </span>
+                    <div className="light-switch__gap" aria-hidden="true" />
+                    <span className="light-switch__paddle">
+                      <button
+                        type="button"
+                        className="light-switch__half light-switch__half--right"
+                        aria-label="Tune toward next stations, press and hold"
+                        tabIndex={-1}
+                        onPointerDown={(e) => handleTunerHalfDown("right", e)}
+                        onPointerUp={handleTunerHalfEnd}
+                        onPointerCancel={handleTunerHalfEnd}
+                      >
+                        <span className="light-switch__screw light-switch__screw--edge-tr" aria-hidden="true" />
+                        <span className="light-switch__screw light-switch__screw--edge-br" aria-hidden="true" />
+                      </button>
+                    </span>
+                    </div>
 
-              <div
-                className="light-switch"
-                role="group"
-                tabIndex={0}
-                aria-valuemin={0}
-                aria-valuemax={1000}
-                aria-valuenow={Math.round(tunerPosition * 1000)}
-                aria-label="Tune location"
-                aria-valuetext={
-                  nearestLocation?.name
-                    ? `${nearestLocation.name}${isAligned ? "" : " (between stations)"}`
-                    : undefined
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                    e.preventDefault();
-                    const delta =
-                      e.key === "ArrowLeft" ? -TUNER_KEYBOARD_NUDGE : TUNER_KEYBOARD_NUDGE;
-                    setTunerPosition((p) => clamp01(p + delta));
-                  } else if (e.key === "Home") {
-                    e.preventDefault();
-                    setTunerPosition(0);
-                  } else if (e.key === "End") {
-                    e.preventDefault();
-                    setTunerPosition(1);
-                  }
-                }}
-              >
-                <span className="light-switch__paddle">
-                  <button
-                    type="button"
-                    className="light-switch__half light-switch__half--left"
-                    aria-label="Tune toward previous stations, press and hold"
-                    tabIndex={-1}
-                    onPointerDown={(e) => handleTunerHalfDown("left", e)}
-                    onPointerUp={handleTunerHalfEnd}
-                    onPointerCancel={handleTunerHalfEnd}
-                  >
-                    <span className="light-switch__screw light-switch__screw--edge-tl" aria-hidden="true" />
-                    <span className="light-switch__screw light-switch__screw--edge-bl" aria-hidden="true" />
-                  </button>
-                </span>
-                <div className="light-switch__gap" aria-hidden="true" />
-                <span className="light-switch__paddle">
-                  <button
-                    type="button"
-                    className="light-switch__half light-switch__half--right"
-                    aria-label="Tune toward next stations, press and hold"
-                    tabIndex={-1}
-                    onPointerDown={(e) => handleTunerHalfDown("right", e)}
-                    onPointerUp={handleTunerHalfEnd}
-                    onPointerCancel={handleTunerHalfEnd}
-                  >
-                    <span className="light-switch__screw light-switch__screw--edge-tr" aria-hidden="true" />
-                    <span className="light-switch__screw light-switch__screw--edge-br" aria-hidden="true" />
-                  </button>
-                </span>
-              </div>
+                    <div className="reset-control">
+                      <span className="reset-label" aria-hidden="true">RESET</span>
+                      <button
+                        type="button"
+                        className="reset-button"
+                        aria-label="Reset playlists for current region (press and hold 3 seconds)"
+                        aria-pressed={resetCountdown != null}
+                        disabled={resetting}
+                        onPointerDown={handleResetDown}
+                        onPointerUp={handleResetCancel}
+                        onPointerCancel={handleResetCancel}
+                        onPointerLeave={handleResetCancel}
+                        onContextMenu={(e) => e.preventDefault()}
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="tuner-controls-row">
+                  <div className="reset-control">
+                    <span className="reset-label" aria-hidden="true">RESET</span>
+                    <button
+                      type="button"
+                      className="reset-button"
+                      aria-label="Reset playlists for current region (press and hold 3 seconds)"
+                      aria-pressed={resetCountdown != null}
+                      disabled={resetting}
+                      onPointerDown={handleResetDown}
+                      onPointerUp={handleResetCancel}
+                      onPointerCancel={handleResetCancel}
+                      onPointerLeave={handleResetCancel}
+                      onContextMenu={(e) => e.preventDefault()}
+                    />
+                  </div>
+                  <div className="radio-shell radio-shell--error">
+                    No playlists in this region yet. Hold RESET to generate them.
+                  </div>
+                </div>
+              )}
             </section>
           )}
 
@@ -683,6 +1259,10 @@ function App() {
                       className={`tuner-well tuner-well--switcher${
                         selectedRegion === String(r.id)
                           ? " tuner-well--region-active"
+                          : ""
+                      }${
+                        resetting && resettingRegionId === String(r.id)
+                          ? " tuner-well--refreshing"
                           : ""
                       }`}
                     >

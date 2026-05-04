@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { exchangeCodeForToken, saveAccessToken } from "../lib/spotifyAuth";
+import { exchangeCodeForToken, saveAuthFromSpotifyTokenResponse } from "../lib/spotifyAuth";
 
 export default function Callback() {
   const [searchParams] = useSearchParams();
@@ -20,8 +20,8 @@ export default function Callback() {
     }
     exchangeCodeForToken(code)
       .then((data) => {
-        saveAccessToken(data.access_token);
-        navigate("/refresh", { replace: true });
+        saveAuthFromSpotifyTokenResponse(data);
+        navigate("/", { replace: true });
       })
       .catch((e) => setError(e.message));
   }, [searchParams, navigate]);
@@ -30,7 +30,7 @@ export default function Callback() {
     return (
       <div style={{ padding: "2rem" }}>
         <p style={{ color: "#c00" }}>{error}</p>
-        <a href="/refresh">Back to Refresh</a>
+        <a href="/">Back to app</a>
       </div>
     );
   }
