@@ -1,2 +1,4 @@
-requests>=2.31.0
-psycopg[binary]>=3.1.0
+requests>=2.31.0,<3
+# Pin to <3.2 so the prebuilt psycopg-binary wheel is available for the system
+# Python 3.7 used by `npm run prepare:python-deps` (latest 3.2.x dropped cp37 wheels).
+psycopg[binary]>=3.1.0,<3.2
