@@ -19,7 +19,7 @@ check_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = ["config", "db", "spotify", "handler"]
-path = "aws/playlist_refresher/*.py"
+path = "backend/playlist_refresher/*.py"
 disallow_untyped_defs = true
 
 [tool.pyright]

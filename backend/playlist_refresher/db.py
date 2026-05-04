@@ -33,6 +33,27 @@ def get_locations_with_artists(conn: Connection[Any]) -> list[tuple[int, str]]:
         return [(row["id"], row["name"]) for row in cur.fetchall()]
 
 
+def get_locations_with_artists_by_region(
+    conn: Connection[Any], region_id: int
+) -> list[tuple[int, str]]:
+    """
+    Return (location_id, location_name) for locations in `region_id` that have at least one artist.
+    """
+    with conn.cursor(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT l.id, l.name
+            FROM locations l
+            WHERE l.region_id = %s
+              AND EXISTS (
+                SELECT 1 FROM artists a WHERE a.location_id = l.id
+              )
+            """,
+            (region_id,),
+        )
+        return [(row["id"], row["name"]) for row in cur.fetchall()]
+
+
 def get_artists_for_location(conn: Connection[Any], location_id: int) -> list[str]:
     """Return list of artist names for the given location."""
     with conn.cursor(row_factory=dict_row) as cur:

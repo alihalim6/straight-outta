@@ -1,4 +1,4 @@
-"""Lambda entrypoint: refresh or create one Spotify playlist per location."""
+"""Local entrypoint: refresh or create one Spotify playlist per location."""
 
 from __future__ import annotations
 
@@ -42,8 +42,7 @@ LOCATION_DISPLAY_NAMES = {
     "PHI": "Philly",
     "PITT": "Pittsburgh",
     "NE": "Boston/Northeast",
-    "DMV": "DMV",
-    "VA": "Virginia",
+    "DMV/VA": "DMV/Virginia",
     "NC/SC": "Carolinas",
 }
 
@@ -52,35 +51,52 @@ def _playlist_display_name(db_name: str) -> str:
     return LOCATION_DISPLAY_NAMES.get(db_name, db_name)
 
 
-def _get_bearer_token(event):
-    """
-    Extract Bearer token from HTTP API event (e.g. API Gateway HTTP API).
-    Expects Authorization: Bearer <token>.
-    For local runs, token can also be set via SPOTIFY_ACCESS_TOKEN env var.
-    """
+def _get_bearer_token(event: dict[str, Any]) -> str | None:
+    """Extract `Bearer <token>` from the event's Authorization header."""
     headers = event.get("headers") or {}
     auth = headers.get("authorization") or headers.get("Authorization") or ""
     if auth.startswith("Bearer "):
         return auth[7:].strip()
-    # Local/testing: allow token from env
-    return config.SPOTIFY_ACCESS_TOKEN or None
+    return None
 
 
-def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+def _get_region_id(event: dict[str, Any]) -> int | None:
+    """Read region_id from queryStringParameters (set by server/api.js)."""
+    qs = event.get("queryStringParameters") or {}
+    raw = qs.get("region_id")
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def run_refresh(event: dict[str, Any], _context: Any = None) -> dict[str, Any]:
     """
     For each location with artists: search tracks, then create or update playlist.
-    Skips locations with fewer than 25 artists.
-    Expects a user OAuth token via Authorization: Bearer <token> (e.g. from PKCE flow).
+    Skips locations with fewer than ARTISTS_PER_QUERY artists.
+    Expects a user OAuth token via Authorization: Bearer <token> (PKCE flow).
+    Optional `region_id` query param scopes the refresh to a single region.
     """
     token = _get_bearer_token(event)
     if not token:
         return {"statusCode": 401, "body": "Missing or invalid Authorization header"}
 
+    region_id = _get_region_id(event)
+
     conn = db.get_connection()
     try:
-
-        locations = db.get_locations_with_artists(conn)
-        logger.info("Found %d locations with artists", len(locations))
+        if region_id is not None:
+            locations = db.get_locations_with_artists_by_region(conn, region_id)
+            logger.info(
+                "Found %d locations with artists in region %d",
+                len(locations),
+                region_id,
+            )
+        else:
+            locations = db.get_locations_with_artists(conn)
+            logger.info("Found %d locations with artists", len(locations))
 
         for location_id, location_name in locations:
             try:
@@ -102,9 +118,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                     continue
 
                 playlist_name = f"{_playlist_display_name(location_name)}{config.PLAYLIST_NAME_SUFFFIX}"
-                existing_playlist_id = db.get_playlist_for_location(
-                    conn, location_id
-                )
+                existing_playlist_id = db.get_playlist_for_location(conn, location_id)
 
                 if existing_playlist_id:
                     spotify.replace_playlist_items(
@@ -131,18 +145,23 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                         new_playlist_id,
                         len(track_uris),
                     )
-            except Exception as e:
+            except Exception as exc:
                 logger.exception(
                     "Failed for location %s (%s): %s",
                     location_name,
                     location_id,
-                    e,
+                    exc,
                 )
                 # Continue with other locations
         return {
             "statusCode": 200,
             "headers": {"Content-Type": "application/json"},
-            "body": json.dumps({"locations_processed": len(locations)}),
+            "body": json.dumps(
+                {
+                    "locations_processed": len(locations),
+                    "region_id": region_id,
+                }
+            ),
         }
     finally:
         conn.close()
