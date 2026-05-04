@@ -15,6 +15,12 @@ dist-ssr
 *.local
 .env
 
+# Electron desktop packaging output (electron-builder)
+release
+
+# Bundled Python deps for the desktop refresher (regenerate via `npm run prepare:python-deps`)
+backend/playlist_refresher/.python_packages
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
