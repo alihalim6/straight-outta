@@ -17,7 +17,7 @@ const artistRegionsDir = path.resolve(__dirname, '..', 'artist-regions');
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost/straight-outta';
 
 // Map .txt filename (without extension) -> locations.name (DB code).
-// Order and codes match LOCATION_DISPLAY_NAMES keys in aws/playlist_refresher/handler.py.
+// Order and codes match LOCATION_DISPLAY_NAMES keys in backend/playlist_refresher/handler.py.
 const FILE_TO_LOCATION_NAME = {
   // West
   'los-angeles': 'LA',
@@ -45,8 +45,7 @@ const FILE_TO_LOCATION_NAME = {
   'philly': 'PHI',
   'pittsburgh': 'PITT',
   'northeast': 'NE',
-  'dmv': 'DMV',
-  'virginia': 'VA',
+  'dmv': 'DMV/VA',
   'carolinas': 'NC/SC',
 };
 
